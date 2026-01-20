@@ -1,0 +1,32 @@
+# Binaries
+owasp-scanner
+owasp-scanner-*
+*.exe
+build/
+reports/*.json
+
+# Go
+*.o
+*.a
+*.so
+vendor/
+go.work
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files
+*.test
+*.prof
+coverage.txt
+coverage.html
+
+# Temporary files
+tmp/
+temp/

