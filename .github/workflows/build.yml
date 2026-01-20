@@ -61,16 +61,6 @@ jobs:
       - name: Download dependencies
         run: go mod download || true
 
-      - name: Check directory structure
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Directory contents:"
-          ls -la
-          echo "cmd/ contents:"
-          ls -la cmd/
-          echo "cmd/owasp-scanner/ contents:"
-          ls -la cmd/owasp-scanner/
-
       - name: Build binary for ${{ matrix.platform }}
         env:
           GOOS: ${{ matrix.goos }}
