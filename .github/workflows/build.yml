@@ -71,7 +71,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
-          go build -ldflags="-s -w" -o ${OUTPUT_NAME} ./cmd/owasp-scanner/main.go
+          go build -ldflags="-s -w" -o ${OUTPUT_NAME} ./cmd/owasp-scanner
           echo "Built binary: ${OUTPUT_NAME}"
           ls -lh ${OUTPUT_NAME}
 
