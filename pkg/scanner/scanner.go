@@ -92,29 +92,59 @@ func (s *Scanner) scanURL(targetURL string, depth int) {
 		return
 	}
 
+	// Extract forms from the page
+	crawler := NewCrawler()
+	forms := crawler.ExtractForms(body, parsedURL)
+
+	if len(forms) > 0 {
+		fmt.Printf("Found %d form(s) on %s\n", len(forms), targetURL)
+		for _, f := range forms {
+			fmt.Printf("  - Form: %s %s -> %s (inputs: %v)\n", f.Method, f.Action, f.ID, f.Inputs)
+		}
+	}
+
 	// Test payloads if provided
 	var payloadResults []models.PayloadResult
 	if len(s.config.Payloads()) > 0 {
 		tester := NewPayloadTester(s.httpClient, s.config.UserAgent)
-		payloadResults = tester.TestPayloads(targetURL, s.config.Payloads(), baseline)
+		// Only test GET parameters if URL has query parameters or forms exist
+		if len(parsedURL.Query()) > 0 {
+			payloadResults = tester.TestPayloads(targetURL, s.config.Payloads(), baseline, forms)
+		} else if len(forms) > 0 {
+			// If no query params but forms exist, we'll test forms instead via POST
+			fmt.Printf("No query parameters found on %s, will test via POST forms instead\n", targetURL)
+		}
 	}
 
 	// Analyze for OWASP vulnerabilities
 	findings := s.analyzer.Analyze(targetURL, body, headers, payloadResults)
 	scanDuration := time.Since(scanStart)
 
-	if len(findings) > 0 || len(payloadResults) > 0 {
+	// Test payloads on forms
+	var formPayloadResults []models.PayloadResult
+	if len(s.config.Payloads()) > 0 && len(forms) > 0 {
+		tester := NewPayloadTester(s.httpClient, s.config.UserAgent)
+		for _, form := range forms {
+			formResults := tester.TestPayloadsOnForm(&form, s.config.Payloads(), baseline)
+			formPayloadResults = append(formPayloadResults, formResults...)
+		}
+	}
+
+	// Combine all payload results
+	allPayloadResults := append(payloadResults, formPayloadResults...)
+
+	if len(findings) > 0 || len(allPayloadResults) > 0 || len(forms) > 0 {
 		s.results = append(s.results, models.ScanResult{
 			URL:          targetURL,
 			Findings:     findings,
-			PayloadTests: payloadResults,
+			PayloadTests: allPayloadResults,
+			FormsFound:   forms,
 			Timestamp:    time.Now(),
 			ScanDuration: scanDuration,
 		})
 	}
 
 	// Extract and scan links
-	crawler := NewCrawler()
 	links := crawler.ExtractLinks(body, parsedURL)
 	for _, link := range links {
 		s.scanURL(link, depth+1)

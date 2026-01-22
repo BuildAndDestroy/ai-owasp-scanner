@@ -21,6 +21,16 @@ type Finding struct {
 	Severity    string          `json:"severity"`
 }
 
+// FormData represents a discovered form on a page
+type FormData struct {
+	Method string   `json:"method"`
+	Action string   `json:"action"`
+	Inputs []string `json:"input_names"`
+	URL    string   `json:"found_on_url"`
+	ID     string   `json:"form_id,omitempty"`
+	Name   string   `json:"form_name,omitempty"`
+}
+
 // PayloadResult represents the result of testing a single payload
 type PayloadResult struct {
 	Payload         string          `json:"payload"`
@@ -31,6 +41,8 @@ type PayloadResult struct {
 	Confidence      ConfidenceLevel `json:"confidence"`
 	ExploitDetected bool            `json:"exploit_detected"`
 	Indicators      []string        `json:"indicators,omitempty"`
+	Parameter       string          `json:"parameter,omitempty"`
+	HTTPMethod      string          `json:"http_method,omitempty"`
 }
 
 // ScanResult represents the complete scan result for a single URL
@@ -38,6 +50,7 @@ type ScanResult struct {
 	URL          string          `json:"url"`
 	Findings     []Finding       `json:"findings"`
 	PayloadTests []PayloadResult `json:"payload_tests,omitempty"`
+	FormsFound   []FormData      `json:"forms_found,omitempty"`
 	Timestamp    time.Time       `json:"timestamp"`
 	ScanDuration time.Duration   `json:"scan_duration_ms"`
 }

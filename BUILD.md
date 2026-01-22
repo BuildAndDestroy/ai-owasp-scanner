@@ -132,6 +132,18 @@ docker run --rm \
 - Make (optional, for using Makefile)
 - Docker (optional, for containerized builds)
 
+### Testing
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+go test ./pkg/... -v -cover
+
+# Run specific package tests
+go test ./pkg/scanner -v
+```
+
 ### Code Quality
 ```bash
 # Format code
@@ -189,8 +201,23 @@ go version
 │   └── workflows/
 │       └── build.yml         # GitHub Actions CI/CD
 ├── payloads/                 # Sample payload files
-│   └── payloads.txt
-└── reports/                  # Output directory for JSON reports
+│   └── sample-payloads.txt
+├── reports/                  # Output directory for JSON reports (auto-created)
+├── pkg/
+│   ├── config/               # Configuration handling
+│   ├── models/               # Data structures
+│   ├── report/               # Report generation
+│   └── scanner/              # Core scanning logic
+│       ├── analyzer.go       # Vulnerability analysis
+│       ├── crawler.go        # Web crawling & form extraction
+│       ├── payload.go        # Payload injection & testing
+│       ├── scanner.go        # Main scanner orchestration
+│       ├── utils.go          # Utility functions
+│       ├── crawler_test.go   # Form discovery tests
+│       ├── payload_test.go   # Payload testing tests
+│       ├── types_test.go     # Data structure tests
+│       └── config_test.go    # Configuration tests
+└── README.md                 # Project documentation
 ```
 
 ## Command-line Flags
