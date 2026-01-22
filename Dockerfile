@@ -18,5 +18,5 @@ FROM scratch
 # Copy binaries from builder
 COPY --from=builder /app/bin/ /bin/
 
-# Command to run the application
-CMD ["/bin/owasp-scanner"]
+# Entrypoint to run the application
+ENTRYPOINT ["/bin/owasp-scanner"]

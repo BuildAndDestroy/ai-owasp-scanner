@@ -24,15 +24,29 @@ func NewPayloadTester(client *http.Client, userAgent string) *PayloadTester {
 	}
 }
 
-// TestPayloads tests all payloads against a URL
-func (pt *PayloadTester) TestPayloads(targetURL string, payloads []string, baseline baselineData) []models.PayloadResult {
+// TestPayloads tests all payloads against a URL's query parameters
+func (pt *PayloadTester) TestPayloads(targetURL string, payloads []string, baseline baselineData, forms []models.FormData) []models.PayloadResult {
 	var results []models.PayloadResult
-
-	fmt.Printf("Testing %d payloads with confidence scoring...\n", len(payloads))
 
 	parsedURL, err := url.Parse(targetURL)
 	if err != nil {
 		return results
+	}
+
+	// Only test if URL has existing query parameters
+	query := parsedURL.Query()
+	if len(query) == 0 {
+		// No query parameters to test
+		return results
+	}
+
+	fmt.Printf("Testing %d payloads on %d query parameter(s)...\n", len(payloads), len(query))
+
+	// Get the first parameter name to track
+	var firstParam string
+	for key := range query {
+		firstParam = key
+		break
 	}
 
 	for i, payload := range payloads {
@@ -48,6 +62,8 @@ func (pt *PayloadTester) TestPayloads(targetURL string, payloads []string, basel
 				Payload:    payload,
 				Error:      err.Error(),
 				Confidence: models.ConfidenceLow,
+				HTTPMethod: "GET",
+				Parameter:  firstParam,
 			})
 			continue
 		}
@@ -60,6 +76,8 @@ func (pt *PayloadTester) TestPayloads(targetURL string, payloads []string, basel
 		result := models.PayloadResult{
 			Payload:      payload,
 			ResponseTime: responseTime,
+			HTTPMethod:   "GET",
+			Parameter:    firstParam,
 		}
 
 		if err != nil {
@@ -79,7 +97,81 @@ func (pt *PayloadTester) TestPayloads(targetURL string, payloads []string, basel
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	fmt.Printf("✓ Completed payload testing\n")
+	fmt.Printf("✓ Completed payload testing on query parameters\n")
+	return results
+}
+
+// TestPayloadsOnForm tests payloads on form inputs via POST
+func (pt *PayloadTester) TestPayloadsOnForm(form *models.FormData, payloads []string, baseline baselineData) []models.PayloadResult {
+	var results []models.PayloadResult
+
+	if form.Method != "POST" {
+		return results
+	}
+
+	fmt.Printf("Testing form at %s with %d payloads (POST)\n", form.Action, len(payloads))
+
+	_, err := url.Parse(form.Action)
+	if err != nil {
+		return results
+	}
+
+	for _, inputName := range form.Inputs {
+		for _, payload := range payloads {
+			formData := url.Values{}
+			for _, input := range form.Inputs {
+				if input == inputName {
+					formData.Set(input, payload)
+				} else {
+					formData.Set(input, "test")
+				}
+			}
+
+			req, err := http.NewRequest("POST", form.Action, strings.NewReader(formData.Encode()))
+			if err != nil {
+				results = append(results, models.PayloadResult{
+					Payload:    payload,
+					Parameter:  inputName,
+					Error:      err.Error(),
+					Confidence: models.ConfidenceLow,
+					HTTPMethod: "POST",
+				})
+				continue
+			}
+
+			req.Header.Set("User-Agent", pt.userAgent)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			start := time.Now()
+			resp, err := pt.httpClient.Do(req)
+			responseTime := time.Since(start)
+
+			result := models.PayloadResult{
+				Payload:      payload,
+				Parameter:    inputName,
+				ResponseTime: responseTime,
+				HTTPMethod:   "POST",
+			}
+
+			if err != nil {
+				result.Error = err.Error()
+				result.Confidence = models.ConfidenceLow
+			} else {
+				result.StatusCode = resp.StatusCode
+				body, _ := readBody(resp)
+				result.ResponseLength = len(body)
+				bodyStr := string(body)
+				resp.Body.Close()
+
+				analyzePayloadResponse(payload, &result, baseline, bodyStr)
+			}
+
+			results = append(results, result)
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
+	fmt.Printf("✓ Completed form testing for %s\n", form.Action)
 	return results
 }
 
@@ -188,18 +280,18 @@ func analyzePayloadResponse(payload string, result *models.PayloadResult, baseli
 	result.Indicators = indicators
 }
 
-// injectPayload injects a payload into a URL
+// injectPayload injects a payload into a URL's existing query parameters
 func injectPayload(parsedURL *url.URL, payload string) string {
 	query := parsedURL.Query()
 
+	// Only inject if there are existing query parameters
 	if len(query) > 0 {
 		for key := range query {
 			query.Set(key, payload)
 			break
 		}
-	} else {
-		query.Set("test", payload)
 	}
+	// Don't add "test" parameter - only test existing parameters
 
 	parsedURL.RawQuery = query.Encode()
 	return parsedURL.String()

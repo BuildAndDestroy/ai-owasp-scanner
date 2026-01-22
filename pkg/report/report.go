@@ -51,16 +51,29 @@ func SaveJSON(report models.ScanReport) error {
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
 	filename := fmt.Sprintf("scan_report_%s.json", timestamp)
 
+	// Determine report directory - prefer /app/reports for Docker, fall back to reports/
+	reportDir := "reports"
+	if _, err := os.Stat("/app/reports"); err == nil {
+		reportDir = "/app/reports"
+	}
+
+	// Create reports directory if it doesn't exist
+	if err := os.MkdirAll(reportDir, 0755); err != nil {
+		return fmt.Errorf("failed to create reports directory: %w", err)
+	}
+
+	filepath := fmt.Sprintf("%s/%s", reportDir, filename)
+
 	jsonData, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	if err := os.WriteFile(filename, jsonData, 0644); err != nil {
+	if err := os.WriteFile(filepath, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	fmt.Printf("\n✓ JSON report saved to: %s\n", filename)
+	fmt.Printf("\n✓ JSON report saved to: %s\n", filepath)
 	printSummaryStats(report)
 
 	return nil
