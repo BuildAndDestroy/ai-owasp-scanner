@@ -33,6 +33,18 @@ func TestConfigValidation(t *testing.T) {
 				TargetURL:   "http://example.com",
 				MaxDepth:    3,
 				PayloadFile: "",
+				CrawlOnly:   false,
+				Threads:     4,
+			},
+			shouldErr: false,
+		},
+		{
+			name: "valid config with crawl only",
+			config: Config{
+				TargetURL: "http://example.com",
+				MaxDepth:  3,
+				CrawlOnly: true,
+				Threads:   2,
 			},
 			shouldErr: false,
 		},
@@ -41,6 +53,7 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				TargetURL: "",
 				MaxDepth:  3,
+				Threads:   1,
 			},
 			shouldErr: true,
 		},
@@ -49,6 +62,25 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				TargetURL: "http://example.com",
 				MaxDepth:  -1,
+				Threads:   1,
+			},
+			shouldErr: true,
+		},
+		{
+			name: "zero threads",
+			config: Config{
+				TargetURL: "http://example.com",
+				MaxDepth:  3,
+				Threads:   0,
+			},
+			shouldErr: true,
+		},
+		{
+			name: "negative threads",
+			config: Config{
+				TargetURL: "http://example.com",
+				MaxDepth:  3,
+				Threads:   -1,
 			},
 			shouldErr: true,
 		},
@@ -105,11 +137,41 @@ func TestConfigMaxDepth(t *testing.T) {
 			config := Config{
 				TargetURL: "http://example.com",
 				MaxDepth:  tt.depth,
+				Threads:   1,
 			}
 
 			err := config.Validate()
 			if (err != nil) != tt.shouldErr {
 				t.Errorf("depth %d: got error %v, shouldErr %v", tt.depth, err, tt.shouldErr)
+			}
+		})
+	}
+}
+
+func TestConfigThreads(t *testing.T) {
+	tests := []struct {
+		name      string
+		threads   int
+		shouldErr bool
+	}{
+		{"single thread", 1, false},
+		{"multiple threads", 4, false},
+		{"large thread count", 100, false},
+		{"zero threads", 0, true},
+		{"negative threads", -1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := Config{
+				TargetURL: "http://example.com",
+				MaxDepth:  3,
+				Threads:   tt.threads,
+			}
+
+			err := config.Validate()
+			if (err != nil) != tt.shouldErr {
+				t.Errorf("threads %d: got error %v, shouldErr %v", tt.threads, err, tt.shouldErr)
 			}
 		})
 	}
@@ -123,6 +185,8 @@ func TestConfigFields(t *testing.T) {
 		MaxDepth:    5,
 		UserAgent:   "CustomAgent/1.0",
 		Timeout:     30 * time.Second,
+		CrawlOnly:   true,
+		Threads:     8,
 	}
 
 	if config.TargetURL != "http://example.com" {
@@ -143,6 +207,14 @@ func TestConfigFields(t *testing.T) {
 
 	if config.Timeout != 30*time.Second {
 		t.Error("Timeout mismatch")
+	}
+
+	if config.CrawlOnly != true {
+		t.Error("CrawlOnly mismatch")
+	}
+
+	if config.Threads != 8 {
+		t.Error("Threads mismatch")
 	}
 }
 
