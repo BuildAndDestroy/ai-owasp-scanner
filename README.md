@@ -5,13 +5,15 @@ The AI OWASP Scanner is a tool designed to automate the process of scanning appl
 
 ## Features
 - **Automated Vulnerability Scanning**: Crawls websites and tests payloads against query parameters and form inputs
+- **Crawl-Only Mode**: Option to crawl websites and collect URLs without performing vulnerability scanning
+- **Multi-Threaded Processing**: Configurable thread count for parallel processing to speed up scans
 - **Form Discovery & Testing**: Automatically discovers HTML forms and tests all input fields with POST requests
 - **Parameter Tracking**: Tracks which parameters were tested and with which HTTP method (GET/POST)
 - **Comprehensive Payloads**: Tests for SQL injection, XSS, path traversal, SSRF, and command injection vulnerabilities
 - **JSON Reporting**: Generates detailed JSON reports with all findings, forms discovered, and payload test results
 - **Multi-Platform Support**: Builds for Linux, macOS, and Windows on both amd64 and arm64 architectures
 - **Docker Support**: Fully containerized with multi-stage builds for minimal image size
-- **Unit Tests**: Comprehensive test suite with 27+ tests covering form discovery, POST testing, and payload analysis
+- **Unit Tests**: Comprehensive test suite with 30+ tests covering form discovery, POST testing, payload analysis, and new threading features
 
 ## Installation
 To install the AI OWASP Scanner, clone the repository and build the Docker image:
@@ -24,18 +26,50 @@ docker build -t ai-owasp-scanner .
 
 ## Usage
 
+### Command Line Options
+```
+-url string          Target URL to scan (required)
+-payloads string     Path to payload file (optional, uses built-in if not specified)
+-json                Output results in JSON format
+-depth int           Maximum crawl depth (default 3)
+-timeout duration    Request timeout (default 30s)
+-user-agent string   Custom user agent string
+-crawl-only          Only crawl and collect URLs, skip vulnerability scanning
+-threads int         Number of threads for parallel processing (default 4)
+-version             Show version information
+```
+
 ### Quick Start (Docker)
 ```bash
 # Build the image
 docker build -t owasp-scanner .
 
-# Run a scan
+# Run a full vulnerability scan
 docker run --rm \
   -v $(pwd)/payloads:/app/payloads \
   -v $(pwd)/reports:/app/reports \
   owasp-scanner \
   -url http://example.com \
   -payloads /app/payloads/sample-payloads.txt \
+  -json
+
+# Run crawl-only mode to collect URLs
+docker run --rm \
+  -v $(pwd)/reports:/app/reports \
+  owasp-scanner \
+  -url http://example.com \
+  -crawl-only \
+  -threads 8 \
+  -json
+
+# Run with custom threading for faster scanning
+docker run --rm \
+  -v $(pwd)/payloads:/app/payloads \
+  -v $(pwd)/reports:/app/reports \
+  owasp-scanner \
+  -url http://example.com \
+  -payloads /app/payloads/sample-payloads.txt \
+  -threads 8 \
   -json
 ```
 
@@ -62,6 +96,7 @@ go test ./pkg/... -v -cover   # Run with coverage
 ```
 
 Test files:
+- `pkg/scanner/scanner_test.go` - Threading and crawl-only mode tests
 - `pkg/scanner/crawler_test.go` - Form/link extraction tests
 - `pkg/scanner/payload_test.go` - Payload injection and analysis tests
 - `pkg/models/types_test.go` - Data structure validation tests
