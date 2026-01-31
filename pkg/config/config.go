@@ -19,6 +19,8 @@ type Config struct {
 	UserAgent   string
 	ShowVersion bool
 	Timeout     time.Duration
+	CrawlOnly   bool
+	Threads     int
 
 	payloads []string
 }
@@ -41,6 +43,10 @@ func (c *Config) Validate() error {
 		if err := c.loadPayloads(); err != nil {
 			return err
 		}
+	}
+
+	if c.Threads < 1 {
+		return errors.New("threads must be >= 1")
 	}
 
 	return nil
