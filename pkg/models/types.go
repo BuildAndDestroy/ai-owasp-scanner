@@ -45,12 +45,24 @@ type PayloadResult struct {
 	HTTPMethod      string          `json:"http_method,omitempty"`
 }
 
+// SoftwareInfo describes a piece of software or platform component
+// discovered on the target system.  By keeping it generic we can record
+// headers such as `Server` / `X-Powered-By` as well as TLS versions and
+// certificate metadata.
+type SoftwareInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+	Details string `json:"details,omitempty"`
+	Source  string `json:"source,omitempty"` // where the information was observed (header,url,body, tls, etc.)
+}
+
 // ScanResult represents the complete scan result for a single URL
 type ScanResult struct {
 	URL          string          `json:"url"`
 	Findings     []Finding       `json:"findings"`
 	PayloadTests []PayloadResult `json:"payload_tests,omitempty"`
 	FormsFound   []FormData      `json:"forms_found,omitempty"`
+	Software     []SoftwareInfo  `json:"software,omitempty"`
 	Timestamp    time.Time       `json:"timestamp"`
 	ScanDuration time.Duration   `json:"scan_duration_ms"`
 }

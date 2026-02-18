@@ -1,9 +1,11 @@
 package scanner
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +128,7 @@ func (s *Scanner) getLinksFromURL(targetURL string) []string {
 		return nil
 	}
 
-	body, _, statusCode, err := s.fetchPage(targetURL)
+	body, _, statusCode, _, err := s.fetchPage(targetURL)
 	if err != nil {
 		fmt.Printf("  → Error fetching %s: %v\n", targetURL, err)
 		return nil
@@ -251,14 +253,26 @@ func (s *Scanner) processURL(targetURL string, depth int) {
 	// Establish baseline
 	baseline := s.getBaseline(targetURL)
 
-	// Fetch the page
-	body, headers, statusCode, err := s.fetchPage(targetURL)
+	// Fetch the page and gather software information
+	body, headers, statusCode, software, err := s.fetchPage(targetURL)
 	if err != nil {
 		fmt.Printf("Error fetching %s: %v\n", targetURL, err)
 		return
 	}
+	// augment with hints found in the HTML body and URL
+	software = append(software, analyzeBodySoftware(body)...)
+	software = append(software, analyzeURLSoftware(targetURL)...)
 
 	fmt.Printf("  → HTTP %d for %s (%d bytes)\n", statusCode, targetURL, len(body))
+	if len(software) > 0 {
+		for _, s := range software {
+			detailStr := s.Details
+			if detailStr == "" {
+				detailStr = s.Version
+			}
+			fmt.Printf("  → Detected software: %s %s %s\n", s.Name, s.Version, detailStr)
+		}
+	}
 
 	// Extract forms from the page
 	crawler := NewCrawler()
@@ -308,6 +322,7 @@ func (s *Scanner) processURL(targetURL string, depth int) {
 		Findings:     findings,
 		PayloadTests: allPayloadResults,
 		FormsFound:   forms,
+		Software:     software,
 		Timestamp:    time.Now(),
 		ScanDuration: scanDuration,
 	})
@@ -340,14 +355,26 @@ func (s *Scanner) crawlProcessURL(targetURL string, depth int) {
 
 	fmt.Printf("\n[Depth %d] Crawling: %s\n", depth, targetURL)
 
-	// Fetch the page
-	body, _, statusCode, err := s.fetchPage(targetURL)
+	// Fetch the page and capture any software information
+	body, _, statusCode, software, err := s.fetchPage(targetURL)
 	if err != nil {
 		fmt.Printf("Error fetching %s: %v\n", targetURL, err)
 		return
 	}
+	// also inspect body and URL for additional software clues
+	software = append(software, analyzeBodySoftware(body)...)
+	software = append(software, analyzeURLSoftware(targetURL)...)
 
 	fmt.Printf("  → HTTP %d for %s (%d bytes)\n", statusCode, targetURL, len(body))
+	if len(software) > 0 {
+		for _, s := range software {
+			detailStr := s.Details
+			if detailStr == "" {
+				detailStr = s.Version
+			}
+			fmt.Printf("  → Detected software: %s %s %s\n", s.Name, s.Version, detailStr)
+		}
+	}
 
 	// Extract forms from the page (for crawl-only, we just count them)
 	crawler := NewCrawler()
@@ -359,6 +386,7 @@ func (s *Scanner) crawlProcessURL(targetURL string, depth int) {
 		URL:        targetURL,
 		Findings:   []models.Finding{}, // No findings in crawl-only mode
 		FormsFound: forms,
+		Software:   software,
 		Timestamp:  time.Now(),
 	})
 	s.resultsMutex.Unlock()
@@ -368,6 +396,259 @@ func (s *Scanner) crawlProcessURL(targetURL string, depth int) {
 func (s *Scanner) isSameDomain(targetURL *url.URL) bool {
 	return strings.HasSuffix(targetURL.Host, s.baseURL.Host) ||
 		targetURL.Host == s.baseURL.Host
+}
+
+// extractSoftwareInfo inspects response headers and TLS state to build
+// a list of SoftwareInfo entries that can help fingerprint the server or
+// connection.  It is invoked for every fetchPage call when crawler or
+// scanner activity begins.
+func extractSoftwareInfo(resp *http.Response) []models.SoftwareInfo {
+	var software []models.SoftwareInfo
+
+	// common headers that indicate server/platform
+	headersToCheck := []string{"Server", "X-Powered-By", "X-AspNet-Version", "X-Generator"}
+	for _, h := range headersToCheck {
+		if val := resp.Header.Get(h); val != "" {
+			_, version := parseNameVersion(val)
+			software = append(software, models.SoftwareInfo{
+				Name:    h,
+				Version: version,
+				Details: val,
+				Source:  "header:" + h,
+			})
+		}
+	}
+
+	// TLS/SSL information
+	if resp.TLS != nil {
+		// version
+		software = append(software, models.SoftwareInfo{
+			Name:    "TLS",
+			Version: tlsVersionString(resp.TLS.Version),
+			Source:  "tls",
+		})
+
+		// cipher suite
+		software = append(software, models.SoftwareInfo{
+			Name:    "CipherSuite",
+			Details: tls.CipherSuiteName(resp.TLS.CipherSuite),
+			Source:  "tls",
+		})
+
+		// certificate details (only first cert)
+		if len(resp.TLS.PeerCertificates) > 0 {
+			cert := resp.TLS.PeerCertificates[0]
+			details := fmt.Sprintf("subject=%s issuer=%s", cert.Subject.CommonName, cert.Issuer.CommonName)
+			software = append(software, models.SoftwareInfo{
+				Name:    "Certificate",
+				Details: details,
+				Source:  "tls",
+			})
+		}
+	}
+
+	return software
+}
+
+// analyzeURLSoftware inspects the requested URL for library filenames and
+// version numbers. Useful when the content itself is not HTML (e.g. JS/CSS
+// resources) but the filename indicates the software used.
+func analyzeURLSoftware(rawurl string) []models.SoftwareInfo {
+	var software []models.SoftwareInfo
+
+	// patterns to look for in the path/query that include version
+	libPatterns := map[string]*regexp.Regexp{
+		"Jquery":    regexp.MustCompile(`(?i)jquery[-.]?(\d+\.\d+(?:\.\d+)*)`),
+		"Bootstrap": regexp.MustCompile(`(?i)bootstrap[-.]?(\d+\.\d+(?:\.\d+)*)`),
+		"React":     regexp.MustCompile(`(?i)react[-.]?(\d+\.\d+(?:\.\d+)*)`),
+		"Angular":   regexp.MustCompile(`(?i)angular[-.]?(\d+\.\d+(?:\.\d+)*)`),
+		"Vue":       regexp.MustCompile(`(?i)vue[-.]?(\d+\.\d+(?:\.\d+)*)`),
+	}
+
+	for name, re := range libPatterns {
+		if m := re.FindStringSubmatch(rawurl); len(m) > 1 {
+			software = append(software, models.SoftwareInfo{
+				Name:    name,
+				Version: m[1],
+				Source:  "url:" + rawurl,
+			})
+		}
+	}
+
+	// catch libraries referenced by directory or file name without version
+	plainLibs := []string{"jquery", "bootstrap", "react", "angular", "vue", "easing", "wow", "owlcarousel", "isotope", "lightbox", "touchSwipe"}
+	for _, lib := range plainLibs {
+		re := regexp.MustCompile(fmt.Sprintf(`(?i)%s`, lib))
+		if re.MatchString(rawurl) {
+			// only add if not already present
+			exists := false
+			for _, s := range software {
+				if strings.EqualFold(s.Name, lib) {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				software = append(software, models.SoftwareInfo{Name: strings.Title(lib), Source: "url:" + rawurl})
+			}
+		}
+	}
+
+	return software
+}
+
+// parseNameVersion attempts to split a header value like "nginx/1.18.0" into
+// name and version components.  If a slash is not present the entire string is
+// considered the name and version is empty.
+func parseNameVersion(val string) (string, string) {
+	if strings.Contains(val, "/") {
+		parts := strings.SplitN(val, "/", 2)
+		name := parts[0]
+		version := strings.Fields(parts[1])[0]
+		return name, version
+	}
+	return val, ""
+}
+
+// tlsVersionString converts the uint16 constant to a human readable string.
+func tlsVersionString(v uint16) string {
+	switch v {
+	case tls.VersionSSL30:
+		return "SSLv3"
+	case tls.VersionTLS10:
+		return "TLS1.0"
+	case tls.VersionTLS11:
+		return "TLS1.1"
+	case tls.VersionTLS12:
+		return "TLS1.2"
+	case tls.VersionTLS13:
+		return "TLS1.3"
+	default:
+		return fmt.Sprintf("unknown(0x%x)", v)
+	}
+}
+
+// analyzeBodySoftware inspects HTML body text to identify frameworks,
+// CMS, JavaScript and CSS libraries, and other clues.  Detected items are
+// returned as SoftwareInfo entries for inclusion in scan results.
+func analyzeBodySoftware(body string) []models.SoftwareInfo {
+	var software []models.SoftwareInfo
+
+	// <meta name="generator" content="WordPress 5.8" />
+	reGen := regexp.MustCompile(`(?i)<meta\s+name=["']generator["']\s+content=["']([^"']+)["']`)
+	if m := reGen.FindStringSubmatch(body); len(m) > 1 {
+		software = append(software, models.SoftwareInfo{
+			Name:    "Generator",
+			Details: m[1],
+			Source:  "body:meta-generator",
+		})
+	}
+
+	// comments or text like "Powered by WordPress 5.8"
+	rePowered := regexp.MustCompile(`(?i)powered\s+by\s+([A-Za-z0-9_\-]+)(?:\s+(\d+(?:\.\d+)*))?`)
+	if m := rePowered.FindStringSubmatch(body); len(m) > 1 {
+		software = append(software, models.SoftwareInfo{
+			Name:    m[1],
+			Version: m[2],
+			Source:  "body:powered-by",
+		})
+	}
+
+	// look for license header patterns inside JS/CSS that often include name and version
+	// allow for arbitrary text between library name and version (e.g. "jQuery JavaScript Library v3.5.1")
+	// (?s) makes dot match newline so the pattern can span multiple lines
+	licenseRe := regexp.MustCompile(`(?is)(jquery|angular|react|vue|bootstrap).*?v?(\d+\.\d+\.\d+)`)
+	if m := licenseRe.FindStringSubmatch(body); len(m) > 2 {
+		software = append(software, models.SoftwareInfo{
+			Name:    strings.Title(m[1]),
+			Version: m[2],
+			Source:  "body:license",
+		})
+	}
+
+	// script/src and link/href patterns for common libraries (with or without versions)
+	libs := []string{"jquery", "react", "angular", "vue", "bootstrap", "easing", "wow", "owlcarousel", "isotope", "lightbox", "touchSwipe"}
+	for _, lib := range libs {
+		// versioned filenames in script src
+		re := regexp.MustCompile(fmt.Sprintf(`(?i)<script[^>]+src=["']([^"']*%s[-.](\d+\.\d+(?:\.\d+)*)[^"']*)["']`, lib))
+		if m := re.FindStringSubmatch(body); len(m) > 2 {
+			software = append(software, models.SoftwareInfo{
+				Name:    strings.Title(lib),
+				Version: m[2],
+				Source:  "body:script-src=" + m[1],
+			})
+			continue // skip unversioned check since we found versioned
+		}
+
+		// versioned filenames in link href
+		reCss := regexp.MustCompile(fmt.Sprintf(`(?i)<link[^>]+href=["']([^"']*%s[-.](\d+\.\d+(?:\.\d+)*)[^"']*)["']`, lib))
+		if m := reCss.FindStringSubmatch(body); len(m) > 2 {
+			software = append(software, models.SoftwareInfo{
+				Name:    strings.Title(lib),
+				Version: m[2],
+				Source:  "body:link-href=" + m[1],
+			})
+			continue // skip unversioned check since we found versioned
+		}
+
+		// unversioned script src with full path capture
+		reScriptSrc := regexp.MustCompile(fmt.Sprintf(`(?i)<script[^>]+src=["']([^"']*%s[^"']*)["']`, lib))
+		if m := reScriptSrc.FindStringSubmatch(body); len(m) > 1 {
+			// m[1] is the full src attribute value
+			exists := false
+			for _, s := range software {
+				if strings.EqualFold(s.Name, lib) {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				software = append(software, models.SoftwareInfo{Name: strings.Title(lib), Source: "body:script-src=" + m[1]})
+				continue
+			}
+		}
+
+		// unversioned link href with full path capture
+		reLinkHref := regexp.MustCompile(fmt.Sprintf(`(?i)<link[^>]+href=["']([^"']*%s[^"']*)["']`, lib))
+		if m := reLinkHref.FindStringSubmatch(body); len(m) > 1 {
+			// m[1] is the full href attribute value
+			exists := false
+			for _, s := range software {
+				if strings.EqualFold(s.Name, lib) {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				software = append(software, models.SoftwareInfo{Name: strings.Title(lib), Source: "body:link-href=" + m[1]})
+			}
+		}
+	}
+
+	// generic platform patterns
+	patterns := map[string]*regexp.Regexp{
+		"PHP":     regexp.MustCompile(`(?i)php/(\d+\.\d+(?:\.\d+)?)`),
+		"ASP.NET": regexp.MustCompile(`(?i)asp\.net`),
+		"Ruby":    regexp.MustCompile(`(?i)ruby`),
+		"Python":  regexp.MustCompile(`(?i)python`),
+		// match "java" as a whole word to avoid matching "javascript"
+		"Java": regexp.MustCompile(`(?i)\bjava\b`),
+		"Go":   regexp.MustCompile(`(?i)\bgo\b`),
+	}
+	for name, re := range patterns {
+		if m := re.FindStringSubmatch(body); len(m) > 0 {
+			version := ""
+			if len(m) > 1 {
+				version = m[1]
+			}
+			software = append(software, models.SoftwareInfo{
+				Name:    name,
+				Version: version,
+			})
+		}
+	}
+
+	return software
 }
 
 // getBaseline establishes a baseline for the URL
@@ -407,24 +688,26 @@ func (s *Scanner) getBaseline(targetURL string) baselineData {
 	return baseline
 }
 
-// fetchPage fetches a web page and returns its body, headers, and status code
-func (s *Scanner) fetchPage(targetURL string) (string, http.Header, int, error) {
+// fetchPage fetches a web page and returns its body, headers, status code and any software information
+func (s *Scanner) fetchPage(targetURL string) (string, http.Header, int, []models.SoftwareInfo, error) {
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, 0, nil, err
 	}
 	req.Header.Set("User-Agent", s.config.UserAgent)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, 0, nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := readBody(resp)
 	if err != nil {
-		return "", nil, resp.StatusCode, err
+		return "", nil, resp.StatusCode, nil, err
 	}
 
-	return string(body), resp.Header, resp.StatusCode, nil
+	software := extractSoftwareInfo(resp)
+
+	return string(body), resp.Header, resp.StatusCode, software, nil
 }
