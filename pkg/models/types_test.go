@@ -98,6 +98,26 @@ func TestFormDataStructure(t *testing.T) {
 	}
 }
 
+func TestSoftwareInfoStructure(t *testing.T) {
+	info := SoftwareInfo{
+		Name:    "Server",
+		Version: "1.2.3",
+		Details: "TestServer/1.2.3",
+		Source:  "header:Server",
+	}
+
+	if info.Name == "" {
+		t.Error("name should not be empty")
+	}
+
+	if info.Version != "1.2.3" {
+		t.Errorf("version should be 1.2.3, got %s", info.Version)
+	}
+
+	if info.Source == "" {
+		t.Error("source should be populated")
+	}
+}
 func TestScanResultStructure(t *testing.T) {
 	now := time.Now()
 
@@ -124,6 +144,9 @@ func TestScanResultStructure(t *testing.T) {
 				Inputs: []string{"username", "password"},
 			},
 		},
+		Software: []SoftwareInfo{
+			{Name: "Server", Version: "TestServer/1.0"},
+		},
 		Timestamp:    now,
 		ScanDuration: 5 * time.Second,
 	}
@@ -142,6 +165,10 @@ func TestScanResultStructure(t *testing.T) {
 
 	if len(scanResult.FormsFound) != 1 {
 		t.Error("should have 1 form")
+	}
+
+	if len(scanResult.Software) != 1 {
+		t.Error("should have 1 software entry")
 	}
 }
 

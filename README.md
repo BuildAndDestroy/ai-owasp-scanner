@@ -5,6 +5,7 @@ The AI OWASP Scanner is a tool designed to automate the process of scanning appl
 
 ## Features
 - **Automated Vulnerability Scanning**: Crawls websites and tests payloads against query parameters and form inputs
+- **Software Enumeration**: When crawling or scanning, request headers and TLS/SSL metadata are recorded (server, frameworks, certificate info). The scanner also inspects HTML bodies for generator tags, JS/CSS library versions, CMS/framework indicators, and common platform strings, **and analyzes resource URLs (like `/js/jquery-3.3.1.min.js`) or directory paths (e.g. `lib/jquery/jquery.min.js`) to inventory libraries even when no version is specified**.
 - **Crawl-Only Mode**: Option to crawl websites and collect URLs without performing vulnerability scanning
 - **Multi-Threaded Processing**: Configurable thread count for parallel processing to speed up scans
 - **Form Discovery & Testing**: Automatically discovers HTML forms and tests all input fields with POST requests
@@ -75,6 +76,23 @@ docker run --rm \
 
 Reports are saved to `reports/` directory with timestamps.
 
+> **Note:** output JSON now includes a `software` array for each page.  Each entry now includes a `source` field indicating where the software string was observed (header name, `url`, `body:script-src`, `tls`, etc.).
+> Detected items come from headers, TLS info, HTML content analysis and even the request URL itself.  Example entry:
+>
+> ```json
+> {
+>   "url": "http://example.com/",
+>   "software": [
+>     {"name":"Server","version":"nginx","details":"nginx/1.18.0","source":"header:Server"},
+>     {"name":"TLS","version":"TLS1.2","source":"tls"},
+>     {"name":"Generator","details":"WordPress 5.8","source":"body:meta-generator"},
+>     {"name":"Jquery","version":"3.6.0","source":"url"}
+>   ],
+>   ...
+> }
+> ```
+
+
 ### Build from Source
 ```bash
 make build          # Build for current platform
@@ -96,7 +114,7 @@ go test ./pkg/... -v -cover   # Run with coverage
 ```
 
 Test files:
-- `pkg/scanner/scanner_test.go` - Threading and crawl-only mode tests
+- `pkg/scanner/scanner_test.go` - Threading, crawl-only, and software enumeration tests
 - `pkg/scanner/crawler_test.go` - Form/link extraction tests
 - `pkg/scanner/payload_test.go` - Payload injection and analysis tests
 - `pkg/models/types_test.go` - Data structure validation tests
