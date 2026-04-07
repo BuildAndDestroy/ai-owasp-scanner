@@ -21,6 +21,8 @@ type Config struct {
 	Timeout     time.Duration
 	CrawlOnly   bool
 	Threads     int
+	SOCKS5Proxy string
+	TestSOCKS5  bool
 
 	payloads []string
 }
@@ -47,6 +49,16 @@ func (c *Config) Validate() error {
 
 	if c.Threads < 1 {
 		return errors.New("threads must be >= 1")
+	}
+
+	if c.SOCKS5Proxy != "" {
+		if _, err := url.Parse("socks5://" + c.SOCKS5Proxy); err != nil {
+			return errors.New("invalid SOCKS5 proxy address, expected host:port")
+		}
+	}
+
+	if c.TestSOCKS5 && c.SOCKS5Proxy == "" {
+		return errors.New("socks5 proxy is required when test-socks5-proxy is enabled")
 	}
 
 	return nil

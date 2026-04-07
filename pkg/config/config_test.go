@@ -84,6 +84,26 @@ func TestConfigValidation(t *testing.T) {
 			},
 			shouldErr: true,
 		},
+		{
+			name: "valid socks5 proxy",
+			config: Config{
+				TargetURL:   "http://example.com",
+				MaxDepth:    3,
+				Threads:     1,
+				SOCKS5Proxy: "127.0.0.1:9050",
+			},
+			shouldErr: false,
+		},
+		{
+			name: "test socks5 requires proxy",
+			config: Config{
+				TargetURL:  "http://example.com",
+				MaxDepth:   3,
+				Threads:    1,
+				TestSOCKS5: true,
+			},
+			shouldErr: true,
+		},
 	}
 
 	for _, tt := range tests {

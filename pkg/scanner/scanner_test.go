@@ -307,3 +307,27 @@ func TestBodyLibraryNamesNoVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestSOCKS5ProxyTestRequiresProxy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		MaxDepth:  0,
+		Threads:   1,
+		Timeout:   5 * time.Second,
+	}
+
+	scanner, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create scanner: %v", err)
+	}
+
+	if err := scanner.TestSOCKS5Proxy(); err == nil {
+		t.Fatal("expected proxy test to fail when no SOCKS5 proxy is configured")
+	}
+}

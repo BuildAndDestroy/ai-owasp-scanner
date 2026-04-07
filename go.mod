@@ -2,6 +2,4 @@ module github.com/BuildAndDestroy/owasp-scanner
 
 go 1.21
 
-require (
-	// Add any external dependencies here if needed
-)
+require golang.org/x/net v0.33.0
