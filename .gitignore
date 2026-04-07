@@ -30,3 +30,6 @@ coverage.html
 # Temporary files
 tmp/
 temp/
+
+# Local environment (secrets)
+.env

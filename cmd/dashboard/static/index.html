@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OWASP Scan Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>OWASP Scan Dashboard</h1>
+      <p class="subtitle">Technologies detected across crawled pages (from stored JSON reports)</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <h2>Upload report</h2>
+      <p class="hint">POST body must match <code>reports/scan_report_*.json</code> format.</p>
+      <input type="file" id="fileInput" accept="application/json,.json" />
+      <button type="button" id="uploadBtn">Upload to MongoDB</button>
+      <p id="uploadStatus" class="status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Saved reports</h2>
+      <button type="button" id="refreshBtn">Refresh list</button>
+      <select id="reportSelect" size="8"></select>
+    </section>
+
+    <section class="panel wide" id="summaryPanel">
+      <h2>Summary</h2>
+      <dl id="summaryDl" class="summary-dl"></dl>
+    </section>
+
+    <section class="panel wide">
+      <h2>Technology footprint</h2>
+      <p class="hint">Aggregated counts: how many result pages mentioned each technology (name + version + details + source).</p>
+      <div class="chart-wrap">
+        <canvas id="techChart" height="120"></canvas>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Technologies (table)</h2>
+      <div class="table-scroll">
+        <table id="techTable">
+          <thead>
+            <tr>
+              <th scope="col" class="sortable" data-sort-key="name" title="Click to sort">Name</th>
+              <th scope="col" class="sortable" data-sort-key="version" title="Click to sort">Version</th>
+              <th scope="col" class="sortable" data-sort-key="source" title="Click to sort">Source</th>
+              <th scope="col">Pages</th>
+              <th scope="col">Example URLs</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>API: <code>/api/reports</code> · Health: <code>/health</code></span>
+  </footer>
+</body>
+</html>
