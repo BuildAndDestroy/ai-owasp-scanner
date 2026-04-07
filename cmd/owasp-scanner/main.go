@@ -43,6 +43,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.TestSOCKS5 {
+		if err := s.TestSOCKS5Proxy(); err != nil {
+			fmt.Fprintf(os.Stderr, "SOCKS5 proxy test failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("SOCKS5 proxy test successful.")
+		os.Exit(0)
+	}
+
 	// Run scan or crawl
 	scanStart := time.Now()
 	var results []models.ScanResult
@@ -81,6 +90,8 @@ func parseFlags() *config.Config {
 	flag.DurationVar(&cfg.Timeout, "timeout", 30*time.Second, "HTTP request timeout")
 	flag.BoolVar(&cfg.CrawlOnly, "crawl-only", false, "Only crawl the website and save URLs to JSON file (no OWASP scanning)")
 	flag.IntVar(&cfg.Threads, "threads", 1, "Number of concurrent threads to use for scanning/crawling (default: 1)")
+	flag.StringVar(&cfg.SOCKS5Proxy, "socks5-proxy", "", "SOCKS5 proxy address in host:port format")
+	flag.BoolVar(&cfg.TestSOCKS5, "test-socks5-proxy", false, "Test SOCKS5 proxy connectivity with target URL and exit")
 
 	flag.Parse()
 

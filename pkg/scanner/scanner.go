@@ -1,8 +1,10 @@
 package scanner
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/BuildAndDestroy/owasp-scanner/pkg/config"
 	"github.com/BuildAndDestroy/owasp-scanner/pkg/models"
+	"golang.org/x/net/proxy"
 )
 
 // Scanner handles the web vulnerability scanning
@@ -46,15 +49,63 @@ func New(cfg *config.Config) (*Scanner, error) {
 		return nil, fmt.Errorf("failed to create analyzer: %w", err)
 	}
 
+	httpClient, err := buildHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Scanner{
 		baseURL:       parsedURL,
 		visited:       make(map[string]bool),
 		results:       []models.ScanResult{},
 		config:        cfg,
-		httpClient:    &http.Client{Timeout: cfg.Timeout},
+		httpClient:    httpClient,
 		baselineCache: make(map[string]baselineData),
 		analyzer:      analyzer,
 	}, nil
+}
+
+func buildHTTPClient(cfg *config.Config) (*http.Client, error) {
+	transport := &http.Transport{}
+
+	if cfg.SOCKS5Proxy != "" {
+		dialer, err := proxy.SOCKS5("tcp", cfg.SOCKS5Proxy, nil, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure SOCKS5 proxy: %w", err)
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+	}
+
+	return &http.Client{
+		Timeout:   cfg.Timeout,
+		Transport: transport,
+	}, nil
+}
+
+// TestSOCKS5Proxy sends a request through the configured client.
+func (s *Scanner) TestSOCKS5Proxy() error {
+	if s.config.SOCKS5Proxy == "" {
+		return fmt.Errorf("no SOCKS5 proxy configured")
+	}
+
+	req, err := http.NewRequest("GET", s.config.TargetURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", s.config.UserAgent)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("received HTTP %d while testing proxy", resp.StatusCode)
+	}
+	return nil
 }
 
 // Scan performs the vulnerability scan

@@ -36,7 +36,9 @@ docker build -t ai-owasp-scanner .
 -timeout duration    Request timeout (default 30s)
 -user-agent string   Custom user agent string
 -crawl-only          Only crawl and collect URLs, skip vulnerability scanning
--threads int         Number of threads for parallel processing (default 4)
+-threads int         Number of threads for parallel processing (default 1)
+-socks5-proxy string SOCKS5 proxy in host:port format (e.g. 127.0.0.1:9050)
+-test-socks5-proxy   Test SOCKS5 proxy connectivity against -url and exit
 -version             Show version information
 ```
 
@@ -72,6 +74,13 @@ docker run --rm \
   -payloads /app/payloads/sample-payloads.txt \
   -threads 8 \
   -json
+
+# Validate that SOCKS5 proxy routing works
+docker run --rm \
+  owasp-scanner \
+  -url http://example.com \
+  -socks5-proxy 127.0.0.1:9050 \
+  -test-socks5-proxy
 ```
 
 Reports are saved to `reports/` directory with timestamps.
