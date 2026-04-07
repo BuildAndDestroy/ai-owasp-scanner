@@ -1,0 +1,45 @@
+# OWASP scan dashboard + MongoDB (authentication enabled)
+# Usage: cp .env.example .env
+#        docker compose -f docker-compose.dashboard.yml up --build
+#
+# If you previously ran Mongo without auth, remove the volume so the DB re-inits:
+#   docker compose -f docker-compose.dashboard.yml down -v
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand({ ping: 1 })" --quiet || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "8080:8080"
+    environment:
+      # Built here so .env only needs MONGO_ROOT_* (no shell-style $vars inside MONGODB_URI).
+      # Optional: set MONGODB_URI in .env to override (e.g. password with characters that break interpolation).
+      MONGODB_URI: ${MONGODB_URI:-mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-owasp_dashboard}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo_data:

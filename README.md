@@ -15,6 +15,7 @@ The AI OWASP Scanner is a tool designed to automate the process of scanning appl
 - **Multi-Platform Support**: Builds for Linux, macOS, and Windows on both amd64 and arm64 architectures
 - **Docker Support**: Fully containerized with multi-stage builds for minimal image size
 - **Unit Tests**: Comprehensive test suite with 30+ tests covering form discovery, POST testing, payload analysis, and new threading features
+- **Report dashboard**: Web UI that ingests `scan_report_*.json` files into MongoDB and visualizes detected technologies (headers, TLS, HTML, URL hints) with charts and tables. Ships with Docker, Docker Compose, and Kubernetes manifests.
 
 ## Installation
 To install the AI OWASP Scanner, clone the repository and build the Docker image:
@@ -84,6 +85,77 @@ docker run --rm \
 ```
 
 Reports are saved to `reports/` directory with timestamps.
+
+## Scan report dashboard (MongoDB)
+
+The dashboard stores full scan report JSON in MongoDB and aggregates `software` entries per page into charts and a sortable table.
+
+### Run locally
+
+Requires MongoDB listening on `127.0.0.1:27017`, or set **`MONGO_ROOT_USERNAME`** / **`MONGO_ROOT_PASSWORD`** (and optional **`MONGO_HOST`**, default `127.0.0.1:27017`) so the dashboard builds a URI with `authSource=admin`. You can still set a full **`MONGODB_URI`** to override.
+
+```bash
+go run ./cmd/dashboard -listen :8080
+```
+
+Open http://127.0.0.1:8080 and upload a file matching `reports/scan_report_*.json`, or POST JSON:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/api/reports \
+  -H 'Content-Type: application/json' \
+  --data-binary @reports/scan_report_2026-04-07_15-34-29.json
+```
+
+API:
+
+- `GET /health` — liveness
+- `GET /api/reports` — list stored reports (id, target URL, created time)
+- `POST /api/reports` — body = full scan report JSON
+- `GET /api/reports/{id}` — raw report JSON
+- `GET /api/reports/{id}/technologies` — summary + aggregated technologies
+
+Environment variables: **`MONGODB_DATABASE`** (default `owasp_dashboard`). Connection string: optional **`MONGODB_URI`**; if unset, the binary builds one from **`MONGO_ROOT_USERNAME`**, **`MONGO_ROOT_PASSWORD`**, and **`MONGO_HOST`** (default `127.0.0.1:27017`) using `net/url` so special characters in passwords are encoded. If neither `MONGODB_URI` nor both root vars are set, it falls back to `mongodb://127.0.0.1:27017`.
+
+Optional: create a `.env` file next to the binary (see `.env.example`). Values are loaded automatically via `godotenv` when you run the dashboard locally.
+
+### Docker
+
+```bash
+docker build -f Dockerfile.dashboard -t owasp-dashboard:latest .
+docker run --rm -p 8080:8080 \
+  -e MONGODB_URI='mongodb://user:pass@host.docker.internal:27017/?authSource=admin' \
+  owasp-dashboard:latest
+```
+
+On Linux, add `--add-host=host.docker.internal:host-gateway` if needed so the container can reach MongoDB on the host.
+
+### Docker Compose (MongoDB + dashboard)
+
+MongoDB is configured with **authentication** (root user). Copy `.env.example` to `.env` and set **`MONGO_ROOT_USERNAME`** and **`MONGO_ROOT_PASSWORD`**. Compose builds **`MONGODB_URI`** for the dashboard as `mongodb://USER:PASS@mongo:27017/?authSource=admin` (you do not put `$VAR` placeholders inside `MONGODB_URI` in `.env`). If you need a hand-crafted URI (e.g. password characters that confuse Compose), set **`MONGODB_URI`** in `.env` explicitly; it overrides the default.
+
+```bash
+cp .env.example .env
+# edit .env — set MONGO_ROOT_USERNAME and MONGO_ROOT_PASSWORD
+docker compose -f docker-compose.dashboard.yml up --build
+```
+
+If you previously ran this stack **without** auth, drop the old volume so MongoDB can re-initialize with credentials: `docker compose -f docker-compose.dashboard.yml down -v`.
+
+Then open http://127.0.0.1:8080 (MongoDB is exposed on `27017` for debugging).
+
+### Kubernetes
+
+Edit `k8s/mongodb-secret.yaml` (or create your own Secret) with `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, and a matching `MONGODB_URI` for the dashboard. Build and load the image into your cluster (name must match the manifest or retag):
+
+```bash
+docker build -f Dockerfile.dashboard -t owasp-dashboard:latest .
+kind load docker-image owasp-dashboard:latest   # example for kind
+kubectl apply -f k8s/mongodb-secret.yaml
+kubectl apply -f k8s/dashboard-mongodb.yaml
+kubectl port-forward svc/owasp-dashboard 8080:8080
+```
+
+The sample manifest uses `emptyDir` for MongoDB data for simplicity; swap in a persistent volume for production.
 
 > **Note:** output JSON now includes a `software` array for each page.  Each entry now includes a `source` field indicating where the software string was observed (header name, `url`, `body:script-src`, `tls`, etc.).
 > Detected items come from headers, TLS info, HTML content analysis and even the request URL itself.  Example entry:

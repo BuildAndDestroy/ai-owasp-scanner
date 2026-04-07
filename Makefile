@@ -18,17 +18,19 @@ PLATFORMS := \
 	windows/amd64 \
 	windows/arm64
 
-.PHONY: all clean build build-all test docker-build docker-run help
+.PHONY: all clean build build-all test docker-build docker-run dashboard-build docker-dashboard-build help
 
 all: clean build
 
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build for current platform"
+	@echo "  dashboard-build - Build MongoDB report dashboard binary"
 	@echo "  build-all    - Build for all platforms"
 	@echo "  test         - Run tests"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  docker-build - Build Docker image"
+	@echo "  docker-dashboard-build - Build dashboard Docker image (Dockerfile.dashboard)"
 	@echo "  docker-run   - Run Docker container"
 	@echo "  install      - Install binary to /usr/local/bin"
 
@@ -37,6 +39,16 @@ build:
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/owasp-scanner
 	@echo "Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
+
+dashboard-build:
+	@echo "Building owasp-dashboard..."
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/owasp-dashboard ./cmd/dashboard
+	@echo "Binary built: $(BUILD_DIR)/owasp-dashboard"
+
+docker-dashboard-build:
+	@echo "Building dashboard Docker image..."
+	docker build -f Dockerfile.dashboard -t owasp-dashboard:latest .
 
 build-all:
 	@echo "Building for all platforms..."
